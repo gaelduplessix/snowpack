@@ -39,7 +39,7 @@ module.exports = function plugin(snowpackConfig) {
       input: ['.vue'],
       output: ['.js', '.css'],
     },
-    async load({filePath}) {
+    async load({filePath, isSSR}) {
       const {sourcemap, sourceMaps} = snowpackConfig.buildOptions;
 
       const id = hashsum(filePath);
@@ -69,6 +69,7 @@ module.exports = function plugin(snowpackConfig) {
       } else {
         output['.js'].code += `const defaultExport = {};`;
       }
+
       await Promise.all(
         descriptor.styles.map(async (stylePart) => {
           // note: compileStyleAsync is required for SSR + CSS Modules
@@ -78,6 +79,7 @@ module.exports = function plugin(snowpackConfig) {
             id: `data-v-${id}`,
             scoped: stylePart.scoped != null,
             modules: stylePart.module != null,
+            ssr: isSSR,
             preprocessLang: stylePart.lang,
             // preprocessCustomRequire: (id: string) => require(resolve(root, id))
             // TODO load postcss config if present
@@ -95,6 +97,8 @@ module.exports = function plugin(snowpackConfig) {
           id,
           filename: path.relative(snowpackConfig.root || process.cwd(), filePath),
           source: descriptor.template.content,
+          ssr: isSSR,
+          ssrCssVars: [],
           preprocessLang: descriptor.template.lang,
           compilerOptions: {
             scopeId: descriptor.styles.some((s) => s.scoped) ? `data-v-${id}` : null,
@@ -103,9 +107,9 @@ module.exports = function plugin(snowpackConfig) {
         if (js.errors && js.errors.length > 0) {
           console.error(JSON.stringify(js.errors));
         }
-        output['.js'].code += `\n${js.code}\n`;
-        output['.js'].code += `\ndefaultExport.render = render`;
-        output['.js'].code += `\nexport default defaultExport`;
+        output['.js'].code += `\n${js.code};\n\n`;
+        output['.js'].code += `\ndefaultExport.render = ${isSSR ? 'ssrRender' : 'render'};`;
+        output['.js'].code += `\nexport default defaultExport;`;
 
         if ((sourcemap || sourceMaps) && js.map) output['.js'].map += JSON.stringify(js.map);
       }
